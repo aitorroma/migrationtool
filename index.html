@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador YAML para Migración de Emails</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+    <style>
+        body { background-color: #f8f9fa; padding-top: 20px; }
+        .card { margin-bottom: 2rem; }
+        textarea { font-family: monospace; white-space: pre; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="mb-4 text-center">Generador de Configuración de Migración de Emails</h1>
+
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-gear-fill"></i> Configuración General
+            </div>
+            <div class="card-body">
+                <form id="configForm" class="row g-3">
+                    <div class="col-md-6">
+                        <label for="hestiaUser" class="form-label">Usuario Hestia</label>
+                        <input type="text" class="form-control" id="hestiaUser" value="usuario_hestia" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="originHost" class="form-label">Servidor Origen (Host)</label>
+                        <input type="text" class="form-control" id="originHost" value="mail.origen.com" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="targetHost" class="form-label">Servidor Destino (Host)</label>
+                        <input type="text" class="form-control" id="targetHost" value="mail.destino.com" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="defaultPassword" class="form-label">Contraseña por Defecto (Opcional)</label>
+                        <input type="password" class="form-control" id="defaultPassword" value="passPorDefecto123">
+                        <small class="form-text text-muted">Se usará si PasswordOrigin o PasswordTarget están vacíos en el CSV.</small>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-file-earmark-arrow-up-fill"></i> Cargar Archivo CSV
+            </div>
+            <div class="card-body">
+                <p>
+                    <a href="template.csv" download="template.csv" class="btn btn-secondary btn-sm mb-3">
+                        <i class="bi bi-download"></i> Descargar Plantilla CSV
+                    </a><br>
+                    <small class="text-muted">Rellena la plantilla CSV con los datos de las cuentas (Email, PasswordOrigin, PasswordTarget).</small>
+                </p>
+                <div class="mb-3">
+                    <label for="csvFile" class="form-label">Selecciona el archivo CSV relleno:</label>
+                    <input class="form-control" type="file" id="csvFile" accept=".csv">
+                </div>
+                <button id="generateBtn" class="btn btn-primary"><i class="bi bi-magic"></i> Generar YAML</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-filetype-yaml"></i> Resultado YAML
+            </div>
+            <div class="card-body">
+                <textarea id="yamlOutput" class="form-control mb-2" rows="15" readonly placeholder="Aquí aparecerá el contenido del archivo YAML generado..."></textarea>
+                <button id="downloadBtn" class="btn btn-success" disabled>
+                    <i class="bi bi-save-fill"></i> Descargar emails.yaml
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const generateBtn = document.getElementById('generateBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const csvFileInput = document.getElementById('csvFile');
+        const yamlOutput = document.getElementById('yamlOutput');
+        const configForm = document.getElementById('configForm');
+
+        let generatedYamlContent = '';
+
+        generateBtn.addEventListener('click', () => {
+            const file = csvFileInput.files[0];
+            if (!file) {
+                alert('Por favor, selecciona un archivo CSV.');
+                return;
+            }
+
+            if (!configForm.checkValidity()) {
+                alert('Por favor, completa todos los campos de configuración general requeridos.');
+                configForm.reportValidity();
+                return;
+            }
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: (results) => {
+                    try {
+                        const configData = {
+                            hestia_user: document.getElementById('hestiaUser').value,
+                            origin_host: document.getElementById('originHost').value,
+                            target_host: document.getElementById('targetHost').value,
+                            default_password: document.getElementById('defaultPassword').value || '',
+                            accounts: []
+                        };
+
+                        if (!results.data || results.data.length === 0) {
+                            alert("El archivo CSV está vacío o tiene un formato incorrecto. Asegúrate que la primera línea contiene las cabeceras 'Email,PasswordOrigin,PasswordTarget'.");
+                            return;
+                        }
+
+                        results.data.forEach(row => {
+                            if (row.Email && row.Email.trim() !== '') { // Asegura que haya un email
+                                configData.accounts.push({
+                                    email: row.Email.trim(),
+                                    password_origin: row.PasswordOrigin ? row.PasswordOrigin.trim() : '',
+                                    password_target: row.PasswordTarget ? row.PasswordTarget.trim() : ''
+                                });
+                            } else if (Object.values(row).some(val => val && val.trim() !== '')) {
+                                // Si la fila tiene datos pero no un email, puede ser un error
+                                console.warn("Saltando fila sin email:", row);
+                            }
+                        });
+
+                        generatedYamlContent = jsyaml.dump(configData, { indent: 2 });
+                        yamlOutput.value = generatedYamlContent;
+                        downloadBtn.disabled = false;
+                    } catch (error) {
+                        console.error("Error generando YAML:", error);
+                        yamlOutput.value = `Error al procesar el archivo CSV o generar YAML:\n${error}`;
+                        downloadBtn.disabled = true;
+                    }
+                },
+                error: (error) => {
+                    console.error("Error al parsear CSV:", error);
+                    yamlOutput.value = `Error al leer el archivo CSV:\n${error}`;
+                    downloadBtn.disabled = true;
+                }
+            });
+        });
+
+        downloadBtn.addEventListener('click', () => {
+            if (!generatedYamlContent) return;
+
+            const blob = new Blob([generatedYamlContent], { type: 'text/yaml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'emails.yaml';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+    </script>
+</body>
+</html>
