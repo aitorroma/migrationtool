@@ -1,0 +1,5 @@
+Email,PasswordOrigin,PasswordTarget
+usuario1@dominioejemplo.com,passOrigen123,passDestinoABC
+usuario2@otrodominio.net,passOrigen456,
+usuario3@dominioejemplo.com,,passDestinoXYZ
+usuario4@dominiofinal.org,passComun,passComun
